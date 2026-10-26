@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TV Key Test Launcher</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1b1f24; --dim:#5f6b7a; --accent:#1a8f6a; --border:#dde2e8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0e1116; --card:#171c24; --text:#e8edf4; --dim:#8b96a8; --accent:#4fd1a5; --border:#2a3240; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:480px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  p { color:var(--dim); line-height:1.5; margin:0 0 16px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px; }
+  label { font-size:14px; font-weight:600; display:block; margin-bottom:6px; }
+  input { width:100%; font-size:17px; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-family:monospace; text-transform:uppercase; }
+  button { font-size:16px; padding:10px 16px; border-radius:8px; border:0; background:var(--accent); color:#fff; font-weight:600; margin-top:10px; cursor:pointer; }
+  button:disabled { opacity:.4; }
+  google-cast-launcher { display:block; width:56px; height:56px; margin:8px auto; cursor:pointer; --connected-color:var(--accent); --disconnected-color:var(--text); }
+  #state { text-align:center; font-size:15px; color:var(--dim); }
+  ol { padding-left:20px; color:var(--dim); line-height:1.6; margin:0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TV Key Test Launcher</h1>
+  <p>Starts the key-test page on your TV. After it launches, put this device away and use only the TV remote.</p>
+
+  <div class="card">
+    <label for="appId">Cast Application ID</label>
+    <input id="appId" placeholder="e.g. A1B2C3D4" maxlength="8" autocomplete="off">
+    <button id="save">Save &amp; reload</button>
+  </div>
+
+  <div class="card">
+    <google-cast-launcher></google-cast-launcher>
+    <div id="state">Enter your App ID above first.</div>
+  </div>
+
+  <div class="card">
+    <label for="msg">Optional: send a test message to the TV</label>
+    <input id="msg" placeholder="hello tv" style="text-transform:none">
+    <button id="send" disabled>Send</button>
+  </div>
+
+  <div class="card">
+    <label>Once it's running on the TV</label>
+    <ol>
+      <li>Lock this phone or close the tab. Don't tap "Stop casting."</li>
+      <li>Press every button on the Vizio remote.</li>
+      <li>Note which ones show up on screen.</li>
+    </ol>
+  </div>
+</main>
+
+<script>
+  const NAMESPACE = 'urn:x-cast:com.keytest.remote';
+  const KEY = 'keytest.appId';
+  const input = document.getElementById('appId');
+  const stateEl = document.getElementById('state');
+  const sendBtn = document.getElementById('send');
+
+  let saved = '';
+  try { saved = localStorage.getItem(KEY) || ''; } catch (_) {}
+  input.value = saved;
+
+  document.getElementById('save').onclick = () => {
+    const id = input.value.trim().toUpperCase();
+    if (!/^[0-9A-F]{8}$/.test(id)) { alert('App IDs are 8 characters, 0-9 and A-F.'); return; }
+    try { localStorage.setItem(KEY, id); } catch (_) {}
+    location.reload();
+  };
+
+  window.__onGCastApiAvailable = function (isAvailable) {
+    if (!isAvailable) {
+      stateEl.textContent = 'Casting is not available in this browser. Use Chrome.';
+      return;
+    }
+    if (!saved) return;
+    const ctx = cast.framework.CastContext.getInstance();
+    ctx.setOptions({
+      receiverApplicationId: saved,
+      autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
+    });
+    stateEl.textContent = 'Tap the cast icon and pick your TV.';
+    ctx.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, e => {
+      const S = cast.framework.SessionState;
+      const connected = e.sessionState === S.SESSION_STARTED || e.sessionState === S.SESSION_RESUMED;
+      sendBtn.disabled = !connected;
+      stateEl.textContent = {
+        [S.SESSION_STARTING]: 'Launching on the TV…',
+        [S.SESSION_STARTED]: 'Running on the TV. You can put this device away now.',
+        [S.SESSION_RESUMED]: 'Reconnected to the TV.',
+        [S.SESSION_START_FAILED]: 'Launch failed. Is the TV registered and rebooted? See the setup guide.',
+        [S.SESSION_ENDED]: 'Session ended.'
+      }[e.sessionState] || e.sessionState;
+    });
+  };
+
+  sendBtn.onclick = () => {
+    const session = cast.framework.CastContext.getInstance().getCurrentSession();
+    const text = document.getElementById('msg').value || 'hello tv';
+    if (session) session.sendMessage(NAMESPACE, { text }).catch(err => alert('Send failed: ' + err));
+  };
+</script>
+<script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+</body>
+</html>

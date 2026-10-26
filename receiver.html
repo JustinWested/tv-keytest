@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TV Key Test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #171c24;
+    --text: #e8edf4;
+    --dim: #8b96a8;
+    --accent: #4fd1a5;
+    --warn: #f5b84a;
+    --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: "Roboto", "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+  body { display: grid; grid-template-columns: 1fr 1fr; gap: 3vw; padding: 4vh 4vw; outline: none; }
+  h1 { font-size: 3.2vh; color: var(--dim); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+  #status { font-size: 2.4vh; margin-top: 1vh; color: var(--warn); }
+  #status.ok { color: var(--accent); }
+  #big {
+    margin-top: 6vh; font-size: 13vh; font-weight: 700; line-height: 1.05;
+    color: var(--accent); word-break: break-word;
+  }
+  #bigsub { font-size: 3vh; color: var(--dim); margin-top: 2vh; font-family: monospace; }
+  #count { font-size: 2.4vh; color: var(--dim); margin-top: 4vh; }
+  #info { margin-top: 4vh; font-size: 1.8vh; color: var(--dim); font-family: monospace; line-height: 1.5; word-break: break-all; }
+  .panel { background: var(--panel); border-radius: 1.5vh; padding: 3vh 2vw; overflow: hidden; display: flex; flex-direction: column; }
+  #log { list-style: none; font-family: monospace; font-size: 2.3vh; line-height: 1.55; overflow: hidden; flex: 1; margin-top: 2vh; }
+  #log li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #log .key  { color: var(--text); }
+  #log .media{ color: var(--warn); }
+  #log .sys  { color: var(--dim); }
+  #log .msg  { color: #8ab4ff; }
+  #log .bad  { color: var(--bad); }
+</style>
+</head>
+<body tabindex="0">
+  <div>
+    <h1>TV Remote Key Test</h1>
+    <div id="status">Starting…</div>
+    <div id="big">Press any button</div>
+    <div id="bigsub">on the TV remote</div>
+    <div id="count">Key events received: 0</div>
+    <div id="info"></div>
+  </div>
+  <div class="panel">
+    <h1>Event log (newest first)</h1>
+    <ul id="log"></ul>
+  </div>
+
+<script>
+  // ---------- on-screen logging ----------
+  const logEl = document.getElementById('log');
+  const bigEl = document.getElementById('big');
+  const bigSubEl = document.getElementById('bigsub');
+  const countEl = document.getElementById('count');
+  const statusEl = document.getElementById('status');
+  let keyCount = 0;
+
+  function log(text, cls = 'key') {
+    const li = document.createElement('li');
+    const t = new Date().toLocaleTimeString([], { hour12: false });
+    li.textContent = `${t}  ${text}`;
+    li.className = cls;
+    logEl.prepend(li);
+    while (logEl.children.length > 40) logEl.lastChild.remove();
+  }
+
+  function showBig(main, sub) {
+    bigEl.textContent = main;
+    bigSubEl.textContent = sub || '';
+  }
+
+  // ---------- environment info (useful for knowing what the TV can run) ----------
+  document.getElementById('info').textContent =
+    `Screen: ${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio}x\n` +
+    `UA: ${navigator.userAgent}`;
+
+  // ---------- keyboard / remote input: the actual test ----------
+  function onKey(e) {
+    keyCount++;
+    countEl.textContent = `Key events received: ${keyCount}`;
+    const name = e.key && e.key !== 'Unidentified' ? e.key : `keyCode ${e.keyCode}`;
+    if (e.type === 'keydown') showBig(name, `key="${e.key}"  code="${e.code}"  keyCode=${e.keyCode}`);
+    log(`${e.type.padEnd(7)} key="${e.key}" code="${e.code}" keyCode=${e.keyCode}`, 'key');
+    // Don't preventDefault on Back/Escape, so we can also see whether "back" closes the app.
+    const passThrough = ['Escape', 'Back', 'BrowserBack', 'GoBack'];
+    if (!passThrough.includes(e.key)) e.preventDefault();
+  }
+  // Capture phase on window so nothing swallows the events first.
+  window.addEventListener('keydown', onKey, true);
+  window.addEventListener('keyup', onKey, true);
+
+  // Some remotes act as a pointer or scroll wheel instead of keys.
+  window.addEventListener('wheel', e => log(`wheel dx=${Math.round(e.deltaX)} dy=${Math.round(e.deltaY)}`, 'key'), true);
+  window.addEventListener('click', e => log(`click at ${e.clientX},${e.clientY}`, 'key'), true);
+  let lastMove = 0;
+  window.addEventListener('pointermove', e => {
+    if (Date.now() - lastMove > 500) { lastMove = Date.now(); log(`pointer move ${e.clientX},${e.clientY}`, 'key'); }
+  }, true);
+
+  window.addEventListener('focus', () => log('window gained focus', 'sys'));
+  window.addEventListener('blur', () => log('window lost focus', 'sys'));
+  document.addEventListener('visibilitychange', () => log(`visibility: ${document.visibilityState}`, 'sys'));
+
+  // Make sure the page actually has keyboard focus.
+  function grabFocus() { try { window.focus(); document.body.focus(); } catch (_) {} }
+  grabFocus();
+  setInterval(grabFocus, 3000);
+
+  // ---------- Cast receiver setup ----------
+  const NAMESPACE = 'urn:x-cast:com.keytest.remote';
+  try {
+    const context = cast.framework.CastReceiverContext.getInstance();
+    const playerManager = context.getPlayerManager();
+    const options = new cast.framework.CastReceiverOptions();
+    options.disableIdleTimeout = true;   // don't auto-close when no media is playing
+    options.skipPlayersLoad = true;      // no video player needed
+    options.customNamespaces = { [NAMESPACE]: cast.framework.system.MessageType.JSON };
+
+    // Messages typed in the launcher page (proves the link works).
+    context.addCustomMessageListener(NAMESPACE, e => {
+      const text = (e.data && e.data.text) || JSON.stringify(e.data);
+      log(`message from launcher: ${text}`, 'msg');
+      showBig('Message', text);
+    });
+
+    // Remote media buttons (play/pause etc.) may arrive as Cast media commands, not keys.
+    const M = cast.framework.messages.MessageType;
+    [M.PLAY, M.PAUSE, M.STOP, M.SEEK, M.SKIP_AD, M.QUEUE_NEXT, M.QUEUE_PREV,
+     M.SET_VOLUME, M.EDIT_TRACKS_INFO, M.USER_ACTION].forEach(type => {
+      if (!type) return;
+      try {
+        playerManager.setMessageInterceptor(type, req => {
+          log(`cast media command: ${type}`, 'media');
+          showBig(type, 'arrived as a Cast media command');
+          return null; // swallow it; there's no media to act on
+        });
+      } catch (_) {}
+    });
+
+    const E = cast.framework.system.EventType;
+    context.addEventListener(E.READY, () => {
+      statusEl.textContent = 'Receiver running on the TV';
+      statusEl.className = 'ok';
+      log('receiver ready', 'sys');
+    });
+    context.addEventListener(E.SENDER_CONNECTED, e => log(`launcher connected (${e.senderId})`, 'sys'));
+    context.addEventListener(E.SENDER_DISCONNECTED, e => {
+      log(`launcher disconnected (reason: ${e.reason}); still running = good`, 'sys');
+      statusEl.textContent = 'Launcher gone — receiver still running on its own';
+      statusEl.className = 'ok';
+    });
+    context.addEventListener(E.VISIBILITY_CHANGED, e => log(`cast visibility: ${e.isVisible}`, 'sys'));
+    context.addEventListener(E.STANDBY_CHANGED, e => log(`standby: ${e.isStandby}`, 'sys'));
+    context.addEventListener(E.SYSTEM_VOLUME_CHANGED, e =>
+      log(`system volume -> ${Math.round((e.data.level || 0) * 100)}% muted=${e.data.muted}`, 'media'));
+    context.addEventListener(E.SHUTDOWN, () => log('shutdown requested', 'bad'));
+
+    context.start(options);
+  } catch (err) {
+    statusEl.textContent = 'Cast SDK failed to start (opened outside a Cast device?)';
+    statusEl.className = '';
+    log(`error: ${err.message}`, 'bad');
+  }
+</script>
+</body>
+</html>
