@@ -37,7 +37,7 @@
 
   <div class="card">
     <google-cast-launcher></google-cast-launcher>
-    <div id="state">Enter your App ID above first.</div>
+    <div id="state">Loading cast support…</div>
   </div>
 
   <div class="card">
@@ -63,8 +63,10 @@
   const stateEl = document.getElementById('state');
   const sendBtn = document.getElementById('send');
 
+  const DEFAULT_APP_ID = '38F171BA';
   let saved = '';
   try { saved = localStorage.getItem(KEY) || ''; } catch (_) {}
+  if (!saved) saved = DEFAULT_APP_ID;
   input.value = saved;
 
   document.getElementById('save').onclick = () => {
