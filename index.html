@@ -38,6 +38,8 @@
   <div class="card">
     <google-cast-launcher></google-cast-launcher>
     <div id="state">Loading cast support…</div>
+    <div id="caststate" style="text-align:center;font-size:13px;color:var(--dim);margin-top:8px"></div>
+    <div style="text-align:center"><button id="pick">Choose a TV to cast to</button></div>
   </div>
 
   <div class="card">
@@ -87,7 +89,20 @@
       receiverApplicationId: saved,
       autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
     });
-    stateEl.textContent = 'Tap the cast icon and pick your TV.';
+    stateEl.textContent = 'Tap the cast icon (or the button) and pick your TV.';
+    const castStateEl = document.getElementById('caststate');
+    const showCastState = st => {
+      castStateEl.textContent = {
+        NO_DEVICES_AVAILABLE: 'Cast status: no TVs available for this app yet. Usually the TV is still registering in the Cast console or hasn\'t been unplugged/restarted since it became Ready for Testing. Also check this computer is on the same Wi-Fi as the TV.',
+        NOT_CONNECTED: 'Cast status: TV found, not connected.',
+        CONNECTING: 'Cast status: connecting…',
+        CONNECTED: 'Cast status: connected.'
+      }[st] || ('Cast status: ' + st);
+    };
+    showCastState(ctx.getCastState());
+    ctx.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, e => showCastState(e.castState));
+    document.getElementById('pick').onclick = () =>
+      ctx.requestSession().catch(err => { castStateEl.textContent = 'Cast picker: ' + err; });
     ctx.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, e => {
       const S = cast.framework.SessionState;
       const connected = e.sessionState === S.SESSION_STARTED || e.sessionState === S.SESSION_RESUMED;
